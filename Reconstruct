@@ -1,0 +1,124 @@
+#!/bin/bash
+#
+# Reconstruct: Build a new terminal out of an old TR state dump.
+# Karl Kleinpaste, Just Research, February/March 1999.
+#
+# Usage: Reconstruct [-n] [-r] [dump]
+# -n: no destruction of reconstruction source files.
+# -r: start TR in the reconstructed shell.
+# No dump specified -> use stdin
+#
+if [ "$1" = "-h" ] ; then
+    echo Usage: "$0" [-h] [-n] [-r] [dumpfile]
+    echo ' '-h: this help.
+    echo ' '-r: start Recall in reconstructed shell.
+    echo ' '-n: no source file destruction.
+    exit 1
+fi
+#
+newrecall='#'
+save=''
+while [ "$1" = "-n" -o "$1" = "-r" ] ; do
+    case "$1" in
+	-n ) shift ; save='#'     ;;
+	-r ) shift ; newrecall='' ;;
+    esac
+done
+#
+# make working files in a sensible directory.
+TMPDIR="${RECALL_DUMP:-/tmp}"
+mkdir -p "$TMPDIR"
+#
+# identify program for stuffing a command into the pty.
+STI=sti
+#
+# get the dump file, either argv1 or stdin.
+if [ "$#" -eq 0 ] ; then
+    TMP=""$TMPDIR"/reconstruct.data-$$"
+    trap "rm \"$TMP\"" EXIT
+    cat - > "$TMP"
+else
+    TMP="$1"
+    shift
+fi
+if [ "$#" -ne 0 ] ; then
+    echo Usage: 'Reconstruct -n [dump]'
+    exit 1
+fi
+#
+# get geometry.
+GEOMETRY="`sed -e 's/\r$//' < \"$TMP\" | grep -e '^-geometry [0-9]\+x[0-9]\+$' | head -1`"
+case "$RECALL_TERM_PROG" in
+    xterm)
+      # ok as is.
+      ;;
+    gnome-terminal)
+      # tweak argument slightly.
+      GEOMETRY="`echo $GEOMETRY | sed -e 's/-geometry /--geometry=/'`"
+      ;;
+    *) echo RECALL_TERM_PROG "($RECALL_TERM_PROG)" is unknown. && exit 1 ;;
+esac
+#
+# define the temporary files to be inhaled and run.
+export RECON="$TMPDIR"/"reconstruct.script-$$"
+export HISTFILE="$TMPDIR"/"reconstruct.history-$$"
+#
+# extract the history.
+sed -e 's/\r$//' -e '1,/^--history-begin$/d' -e '/^--history-end$/,$d' -e 's/^ *[0-9]*  //' < "$TMP" > "$HISTFILE"
+# (nothing more need be done w/history -- bash will find it on its own.)
+#
+# create the startup script.
+#   fix histfile problem first.
+export defunctHISTFILE="$HISTFILE"
+#   tell user what's up.
+cat > "$RECON" <<EOF
+clear
+echo ==================================
+echo Total Recall: Shell Reconstruction
+echo ==================================
+echo Verify your directory stack before employing '~'digit.
+${save}echo Reconstruction removes the environment source files.
+${newrecall}echo Total Recall has been initialized within this shell.
+echo ''
+#
+EOF
+#   must make environment into export assignments.
+#   - extract env
+#   - escape existing single quotes
+#   - prepend "export"
+#   - add single quotes to values.
+sed -e 's/\r$//' \
+    -e '1,/^--environment-begin$/d' \
+    -e '/^--environment-end$/,$d' \
+    -e "s/'/\\\\'/g" \
+    -e "s/^\([A-Za-z_]\)/export \1/" \
+    -e "s/=/='/" \
+    -e "s/$/'/" < "$TMP" >> "$RECON"
+eval `grep RECALL_TIMESTAMP "$RECON"`
+#   get dirstack elements.
+dirlist="`sed -e 's/\r$//' -e '1,/^--dirstack-begin$/d' -e '/^--dirstack-end$/,$d' < \"$TMP\"`"
+#   add dirstack initialization.
+cat >> "$RECON" <<EOF
+#
+declare -a dirlist
+dirlist=($dirlist)
+dirnum=\${#dirlist[*]}
+dcmd="builtin cd"
+while [ "\$dirnum" -gt 0 ] ; do
+    \$dcmd \${dirlist[\$dirnum-1]} > /dev/null
+    dcmd="builtin pushd"
+    dirnum=\$[\$dirnum-1]
+done
+echo -ne "\033]0;Total Recall: Shell Reconstruction ${RECALL_TIMESTAMP}\007"
+${save}rm "\$RECON" "\$defunctHISTFILE"
+${newrecall}. Recall
+unset RECON defunctHISTFILE dcmd dirlist dirnum
+EOF
+#   needs to be executable.
+chmod 700 "$RECON"
+#
+# start a terminal, with proper geometry, initialized from startup.
+cd
+cmd="bash -c \"stty -echo ; $STI \\\". $RECON\\\" ; stty echo ; exec $SHELL\""
+"$RECALL_TERM_PROG" $GEOMETRY -e "$cmd" < /dev/null > /dev/null 2>&1 &
+exit 0

@@ -1,0 +1,129 @@
+#!/bin/bash
+#
+# Extensive shell instrumentation, to keep long-term record of
+# shell activity.  Produces state dumps at regular intervals
+# which are usable via the Reconstruct script to restore an
+# exact replica of a once-current session.
+#
+if [ -z "$RECALL_HIST" ]
+then
+  export RECALL_HIST="`history 1 | awk '{ print $1 }'`"
+  if [ -z "$RECALL_HIST" ]
+  then
+    if [ -s "$HISTFILE" -a -r "$HISTFILE" ]
+    then
+	# ignore history timestamps
+	export RECALL_HIST=$[ `grep -va '^#' $HISTFILE | wc -l` - 2 ]
+    else
+	export RECALL_HIST=1
+    fi
+  fi
+fi
+export RECALL_INTERVAL=${RECALL_INTERVAL:-30}
+export RECALL_MAXDEPTH=${RECALL_MAXDEPTH:-2}
+export RECALL_DUMP=${RECALL_DUMP:-~/.TR/dump}
+export RECALL_TTY="`tty | sed 's;/dev/;;'`"
+#
+# Alarm generator.
+function recall_alrm ()
+{
+    #
+    # Directories sometimes disappear, so post
+    # the pending ALRM from / using a subshell.
+    f=/tmp/.recall-alrm.$$
+    ( cd /
+      echo "kill -ALRM $$ 2>/dev/null # $RECALL_TTY" |
+      at now + $[$RECALL_INTERVAL+($RANDOM % 10)]minutes ) > $f 2>&1
+    export RECALL_NEXT_ALRM="`grep -va 'warning:' $f | head -1 | sed -e 's/^[^ ]*job \([0-9]\+\) .\+$/\1/'`"
+    rm -f $f
+    unset f
+}
+#
+# State dumper.
+function recall_dump ()
+{
+  #
+  # Restart for next time.
+  if [ "$RECALL_EXIT" != yes ] ; then
+    recall_alrm
+  else
+    echo recall_dump: final.
+    if [ "$RECALL_NEXT_ALRM" ] ; then
+      atrm "$RECALL_NEXT_ALRM"
+    fi
+  fi
+  #
+  # We dump only if there's been activity.
+  newhist="`history 1 | awk '{ print $1 }'`"
+  if [ $newhist -ne $RECALL_HIST ]
+  then
+    #
+    # The dir may not be ready yet.
+    thishost="`echo $HOSTNAME | sed -e 's/\..*$//'`"
+    workdir="$RECALL_DUMP"/"$thishost"/"$RECALL_TTY"
+    if [ ! -d "$workdir" ]
+    then
+      mkdir -p "$workdir"
+      chmod 700 "$RECALL_DUMP"
+    fi
+    timestamp="`date '+%Y~%m~%d-%H:%M:%S'`"
+    #
+    # Bury this background invocation THREE shells deep (triple paren)
+    # to avoid the job being seen as a product of the topmost shell:
+    # Note placement of backgroundifying `&'.
+    ( ( (   echo --pid=$$
+	    echo --tty="$RECALL_TTY"
+	    geometry="`stty -a < /dev/$RECALL_TTY | grep columns | sed -e 's/^.*rows \([0-9]*\); columns \([0-9]*\).*$/\2x\1/'`"
+	    echo -geometry "$geometry"
+	    echo -e '\n--dirstack-begin'
+	    builtin dirs -l
+	    echo -e '--dirstack-end\n\n--history-begin'
+	    history $[$newhist-$RECALL_HIST]
+	    echo -e '--history-end\n\n--environment-begin'
+	    # rather than get environment with env(1), we get it directly from proc.
+	    # this allows us to sort after differentiating NUL-terminated NAME=value pairs
+	    # from embedded NLs within variable values, by temporarily substituting \377.
+	    RECALL_TIMESTAMP="$timestamp" tr '\n' '\377' < /proc/$$/environ | tr '\0' '\n' | sort | egrep -av '^(SSH_|module=|BASH_FUNC_)' | tr '\377' '\n'
+	    echo -e '--environment-end\n\n--processes-begin'
+	    ps uwwwt"$RECALL_TTY"
+	    echo -e '--processes-end'
+	    if [ "$RECALL_DIRLIST" ]
+	    then
+		echo -e '\n--changes-begin'
+		( find . `echo "$RECALL_DIRLIST" | tr : ' '` -xdev \
+		    -maxdepth "$RECALL_MAXDEPTH" -mtime -1 -type f -print |
+		    egrep -va '/.cache/(google-chrome|mozilla|thunderbird)' |
+		    xargs ls -ld ) 2>/dev/null
+		echo -e '--changes-end'
+	    fi
+	) < /dev/null > "$workdir"/"$timestamp"
+	case "$RECALL_MAIL" in
+	    1 | [Yy] | yes | YES | on | ON)
+                # must get rid of ESC, or else mailx uses base64.
+		tr '\033' '^' < "$workdir"/"$timestamp" | mailx -s "Total Recall: $timestamp $HOSTNAME $RECALL_TTY" "$USER"
+		rm -f "$workdir"/"$timestamp"
+		;;
+	    *)
+		;; # nothing more to do.
+	esac ) & )
+    export RECALL_HIST="$newhist"
+  fi
+  if [ "$RECALL_EXIT" = yes ] ; then
+    # stty must complete before pty disappears.
+    sleep 0.2
+  fi
+  unset newhist timestamp workdir thishost
+}
+#
+# We will pick up on this with alarm signals and on exit.
+trap "RECALL_EXIT=yes recall_dump" EXIT
+trap "recall_dump" ALRM
+#
+# Replacement "atq" command, to pick out command sets.
+alias atq="/usr/bin/atq | sort -n | while read j x ; do echo \$j'	'\$x ; at -c \"\$j\" | sed -e '1,/<<.*\(random\|DELIMIT\)/d' -e '/DELIMIT/d' -e '/^$/d' -e 's/^/	/' ; done"
+#
+# Provide an alias to turn it all off.
+alias noRecall='trap exit && trap alrm && atrm "$RECALL_NEXT_ALRM" && unset RECALL_NEXT_ALRM && unalias noRecall'
+#
+# And we'll start the process now.
+recall_alrm
