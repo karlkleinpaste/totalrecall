@@ -59,8 +59,7 @@ function recall_dump ()
   then
     #
     # The dir may not be ready yet.
-    thishost="`echo $HOSTNAME | sed -e 's/\..*$//'`"
-    workdir="$RECALL_DUMP"/"$thishost"/"$RECALL_TTY"
+    workdir="$RECALL_DUMP"/"`hostname --short`"/"$RECALL_TTY"
     if [ ! -d "$workdir" ]
     then
       mkdir -p "$workdir"
@@ -90,7 +89,7 @@ function recall_dump ()
 	    if [ "$RECALL_DIRLIST" ]
 	    then
 		echo -e '\n--changes-begin'
-		( find . `echo "$RECALL_DIRLIST" | tr : ' '` -xdev \
+		( find . ${RECALL_DIRLIST/:/ } -xdev \
 		    -maxdepth "$RECALL_MAXDEPTH" -mtime -1 -type f -print |
 		    egrep -va '/.cache/(google-chrome|mozilla|thunderbird)' |
 		    xargs ls -ld ) 2>/dev/null
@@ -112,7 +111,7 @@ function recall_dump ()
     # stty must complete before pty disappears.
     sleep 0.2
   fi
-  unset newhist timestamp workdir thishost
+  unset newhist timestamp workdir
 }
 #
 # We will pick up on this with alarm signals and on exit.
