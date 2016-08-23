@@ -73,7 +73,8 @@ dump files are created and left under $RECALL\_DUMP).
 (default 2).
 - RECALL\_NEXT\_ALRM, an internally-set at(1) job number.
 - RECALL\_TERM\_PROG, the name of your preferred terminal program.  You
-must set this (no default).  Only xterm and gnome-terminal are understood.
+must set this (no default).  Only xterm and mate-terminal are understood.
+Horrifyingly, recent gnome-terminal no longer understands any geometry option.
 - RECALL\_TIMESTAMP, an internal value set only as a dump is created.
 - RECALL\_TTY, the internally-set short name of your shell's terminal.
 

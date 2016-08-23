@@ -53,6 +53,11 @@ case "$RECALL_TERM_PROG" in
       # ok as is.
       ;;
     gnome-terminal)
+      # the ongoing braindamage of the gtk/gnome people.
+      echo gnome-terminal no longer accepts --geometry option'?!?'
+      exit 1
+      ;;
+    mate-terminal)
       # tweak argument slightly.
       GEOMETRY="`echo $GEOMETRY | sed -e 's/-geometry /--geometry=/'`"
       ;;
