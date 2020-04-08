@@ -32,7 +32,7 @@ function recall_alrm ()
     # the pending ALRM from / using a subshell.
     f=/tmp/.recall-alrm.$$
     ( cd /
-      echo "kill -ALRM $$ 2>/dev/null # $RECALL_TTY" |
+      echo "kill -ALRM $$ 2>/dev/null # $DISPLAY $RECALL_TTY" |
       at now + $[$RECALL_INTERVAL+($RANDOM % 10)]minutes ) > $f 2>&1
     export RECALL_NEXT_ALRM="`grep -va 'warning:' $f | head -1 | sed -e 's/^[^ ]*job \([0-9]\+\) .\+$/\1/'`"
     rm -f $f
@@ -91,7 +91,7 @@ function recall_dump ()
 		echo -e '\n--changes-begin'
 		( find . ${RECALL_DIRLIST//:/ } -xdev \
 		    -maxdepth "$RECALL_MAXDEPTH" -mtime -1 -type f -print |
-		    egrep -va '/\.cache/(google-chrome|mozilla|thumbnails|thunderbird)' |
+		    egrep -iva '/\.cache/|/cache' |
 		    xargs ls -ld ) 2>/dev/null
 		echo -e '--changes-end'
 	    fi
