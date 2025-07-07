@@ -91,7 +91,7 @@ function recall_dump ()
 		echo -e '\n--changes-begin'
 		( find . ${RECALL_DIRLIST//:/ } -xdev \
 		    -maxdepth "$RECALL_MAXDEPTH" -mtime -1 -type f -print |
-		    egrep -iva '/\.cache/|/cache' |
+		    egrep -iva '/\.cache/|/cache|/\.zoom/data' |
 		    xargs ls -ld ) 2>/dev/null
 		echo -e '--changes-end'
 	    fi
